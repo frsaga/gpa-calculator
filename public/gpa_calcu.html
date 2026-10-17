@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>GPA Calculator</title>
+<style>
+  body { 
+    font-family: Arial; 
+    margin: 0;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 1400px;
+    width: 100%;
+  }
+  h2, h3 {
+    text-align: center;
+  }
+  input { margin: 5px; }
+  table { 
+    border-collapse: collapse; 
+    margin-top: 20px;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  table, th, td { border: 1px solid #aaa; padding: 8px; }
+  table input[type="text"], table input[type="number"] { 
+    border: none; 
+    width: 100%; 
+    padding: 4px;
+    box-sizing: border-box;
+  }
+  table button { 
+    padding: 4px 8px; 
+    cursor: pointer;
+  }
+  .filter-section {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #f5f5f5;
+    border-radius: 5px;
+    text-align: center;
+  }
+  .filter-section input, .filter-section select {
+    margin: 5px;
+    padding: 5px;
+  }
+  .selection-section {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #eef6ff;
+    border-radius: 5px;
+    text-align: center;
+  }
+  .selection-section button {
+    margin: 5px;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  .semester-buttons {
+    display: inline;
+  }
+  .semester-empty {
+    color: #666;
+    margin-left: 8px;
+  }
+  .hidden-row {
+    display: none;
+  }
+  div[style*="margin-top"] {
+    text-align: center;
+  }
+  button[onclick="exportToCSV()"] {
+    display: block;
+    margin: 20px auto;
+  }
+  .history-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border: 2px solid #aaa;
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 600px;
+    max-height: 70vh;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    display: none;
+  }
+  .history-panel.active {
+    display: block;
+  }
+  .history-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    display: none;
+  }
+  .history-overlay.active {
+    display: block;
+  }
+  .history-item {
+    padding: 10px;
+    margin: 5px 0;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .history-item:hover {
+    background-color: #f0f0f0;
+  }
+  .history-item .time {
+    color: #666;
+    font-size: 12px;
+  }
+  .history-actions {
+    display: flex;
+    gap: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2>WES GPA Calculator</h2>
+
+  <div style="text-align: center;">
+    <input id="courseName" placeholder="课程名" />
+    <input id="credit" type="number" placeholder="学分" />
+    <input id="score" type="number" placeholder="百分制成绩" />
+    <button onclick="addCourse()">添加课程</button>
+  </div>
+
+  <div style="margin-top: 20px; text-align: center;">
+    <input type="file" id="csvFileInput" accept=".csv" style="margin: 5px;" />
+    <button onclick="importFromCSV()" style="padding: 10px 20px; font-size: 16px;">导入 CSV</button>
+  </div>
+
+  <div class="filter-section">
+    <strong>筛选条件：</strong>
+    <input type="text" id="filterYear" placeholder="学年（如：2023-2024）" oninput="applyFilters()" />
+    <input type="text" id="filterTerm" placeholder="学期（如：1）" oninput="applyFilters()" />
+    <input type="text" id="filterType" placeholder="课程性质（如：必修课）" oninput="applyFilters()" />
+    <input type="text" id="filterName" placeholder="课程名（模糊搜索）" oninput="applyFilters()" />
+    <button onclick="clearFilters()" style="padding: 5px 15px;">清除筛选</button>
+  </div>
+
+  <div class="selection-section">
+    <strong>课程批量选择：</strong>
+    <button onclick="selectAllCourses(true)">全部全选</button>
+    <button onclick="selectAllCourses(false)">全部取消</button>
+    <span id="semesterButtons" class="semester-buttons"></span>
+  </div>
+
+  <h3 id="gpaResult">加权 GPA：--</h3>
+  <h3 id="avgResult">加权均分：--</h3>
+  <h3 id="creditResult">已选课程总学分：0</h3>
+
+  <table id="courseTable">
+    <tr>
+      <th>选择</th>
+      <th>学年</th>
+      <th>学期</th>
+      <th>课程名</th>
+      <th>课程性质</th>
+      <th>学分</th>
+      <th>成绩</th>
+      <th>绩点</th>
+      <th>操作</th>
+    </tr>
+  </table>
+
+  <div style="text-align: center; margin-top: 20px;">
+    <button onclick="exportToCSV()" style="padding: 10px 20px; font-size: 16px; margin: 0 10px;">导出 CSV</button>
+    <button onclick="showHistory()" style="padding: 10px 20px; font-size: 16px; margin: 0 10px;">历史记录</button>
+  </div>
+</div>
+
+<div class="history-overlay" id="historyOverlay" onclick="closeHistory()"></div>
+<div class="history-panel" id="historyPanel" onclick="event.stopPropagation()">
+  <h3 style="margin-top: 0;">历史记录</h3>
+  <div id="historyList"></div>
+  <div style="margin-top: 15px; text-align: right;">
+    <button onclick="closeHistory()" style="padding: 5px 15px;">关闭</button>
+    <button onclick="clearAllHistory()" style="padding: 5px 15px; margin-left: 10px; background-color: #f44336; color: white;">清空历史</button>
+  </div>
+</div>
+
+<script>
+// 历史记录管理
+const HISTORY_KEY = 'gpa_calculator_history';
+const MAX_HISTORY = 50; // 最多保存50条历史记录
+let saveHistoryTimer = null;
+
+// 防抖保存历史记录，避免频繁保存
+function debounceSaveHistory() {
+  if (saveHistoryTimer) {
+    clearTimeout(saveHistoryTimer);
+  }
+  saveHistoryTimer = setTimeout(() => {
+    saveHistory();
+  }, 1000); // 1秒后保存
+}
+
+function saveHistory() {
+  const table = document.getElementById("courseTable");
+  const courses = [];
+  
+  for (let i = 1; i < table.rows.length; i++) {
+    const row = table.rows[i];
+    const yearInput = row.cells[1].querySelector("input");
+    const termInput = row.cells[2].querySelector("input");
+    const nameInput = row.cells[3].querySelector("input");
+    const typeInput = row.cells[4].querySelector("input");
+    const creditInput = row.cells[5].querySelector("input");
+    const scoreInput = row.cells[6].querySelector("input");
+    const checkbox = row.cells[0].querySelector("input[type='checkbox']");
+    
+    if (!nameInput || !creditInput || !scoreInput) continue;
+    
+    courses.push({
+      year: yearInput ? yearInput.value : "",
+      term: termInput ? termInput.value : "",
+      name: nameInput.value,
+      type: typeInput ? typeInput.value : "",
+      credit: creditInput.value,
+      score: scoreInput.value,
+      selected: checkbox ? checkbox.checked : true
+    });
+  }
+  
+  const historyItem = {
+    timestamp: new Date().toISOString(),
+    courses: courses,
+    gpa: document.getElementById("gpaResult").innerText,
+    avg: document.getElementById("avgResult").innerText
+  };
+  
+  let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  history.unshift(historyItem); // 添加到开头
+  
+  // 限制历史记录数量
+  if (history.length > MAX_HISTORY) {
+    history = history.slice(0, MAX_HISTORY);
+  }
+  
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function loadHistory() {
+  return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+}
+
+function showHistory() {
+  const history = loadHistory();
+  const historyList = document.getElementById("historyList");
+  const historyPanel = document.getElementById("historyPanel");
+  const historyOverlay = document.getElementById("historyOverlay");
+  
+  if (history.length === 0) {
+    historyList.innerHTML = "<p style='text-align: center; color: #666;'>暂无历史记录</p>";
+  } else {
+    historyList.innerHTML = history.map((item, index) => {
+      const date = new Date(item.timestamp);
+      const timeStr = date.toLocaleString('zh-CN');
+      const courseCount = item.courses.length;
+      
+      return `
+        <div class="history-item">
+          <div>
+            <div><strong>${timeStr}</strong></div>
+            <div class="time">${courseCount} 门课程 | ${item.gpa} | ${item.avg}</div>
+          </div>
+          <div class="history-actions">
+            <button onclick="restoreHistory(${index})" style="padding: 5px 10px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">恢复</button>
+            <button onclick="deleteHistory(${index})" style="padding: 5px 10px; background-color: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">删除</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  historyPanel.classList.add('active');
+  historyOverlay.classList.add('active');
+}
+
+function closeHistory() {
+  document.getElementById("historyPanel").classList.remove('active');
+  document.getElementById("historyOverlay").classList.remove('active');
+}
+
+function restoreHistory(index) {
+  const history = loadHistory();
+  if (index < 0 || index >= history.length) return;
+  
+  if (!confirm('确定要恢复此历史记录吗？当前数据将被替换。')) {
+    return;
+  }
+  
+  const historyItem = history[index];
+  const table = document.getElementById("courseTable");
+  
+  // 清空现有数据（保留表头）
+  while (table.rows.length > 1) {
+    table.deleteRow(1);
+  }
+  
+  // 恢复数据
+  historyItem.courses.forEach(course => {
+    addCourseFromData(course.name, parseFloat(course.credit), parseFloat(course.score), course.year, course.term, course.type);
+    
+    // 恢复选择状态
+    const lastRow = table.rows[table.rows.length - 1];
+    const checkbox = lastRow.cells[0].querySelector("input[type='checkbox']");
+    if (checkbox) {
+      checkbox.checked = course.selected;
+    }
+  });
+
+  updateSemesterButtons();
+  calculate();
+  
+  // 保存当前状态为新历史记录
+  saveHistory();
+  
+  closeHistory();
+  alert('历史记录已恢复！');
+}
+
+function deleteHistory(index) {
+  if (!confirm('确定要删除此历史记录吗？')) {
+    return;
+  }
+  
+  let history = loadHistory();
+  history.splice(index, 1);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  showHistory();
+}
+
+function clearAllHistory() {
+  if (!confirm('确定要清空所有历史记录吗？此操作不可恢复。')) {
+    return;
+  }
+  
+  localStorage.removeItem(HISTORY_KEY);
+  showHistory();
+}
+
+function scoreToGPA(score) {
+  if (score >= 90) return 4.0;
+  if (score >= 85) return 3.7;
+  if (score >= 82) return 3.3;
+  if (score >= 78) return 3.0;
+  if (score >= 75) return 2.7;
+  if (score >= 72) return 2.3;
+  if (score >= 68) return 2.0;
+  if (score >= 64) return 1.7;
+  if (score >= 60) return 1.0;
+  return 0.0;
+}
+
+function addCourse() {
+  const name = document.getElementById("courseName").value.trim();
+  const credit = parseFloat(document.getElementById("credit").value);
+  const score = parseFloat(document.getElementById("score").value);
+
+  if (!name || isNaN(credit) || isNaN(score)) {
+    alert("请输入完整信息");
+    return;
+  }
+
+  addCourseFromData(name, credit, score, "", "", "");
+  
+  // 保存历史记录
+  saveHistory();
+
+  // 清空输入框
+  document.getElementById("courseName").value = "";
+  document.getElementById("credit").value = "";
+  document.getElementById("score").value = "";
+}
+
+function updateGPA(row) {
+  const scoreInput = row.cells[6].querySelector("input");
+  const gpaDisplay = row.cells[7].querySelector(".gpa-display");
+  const score = parseFloat(scoreInput.value);
+  
+  if (!isNaN(score)) {
+    const gpa = scoreToGPA(score);
+    gpaDisplay.innerText = gpa.toFixed(1);
+  } else {
+    gpaDisplay.innerText = "0.0";
+  }
+}
+
+function calculate() {
+  const table = document.getElementById("courseTable");
+  let totalPoints = 0;
+  let totalCredits = 0;
+  let weightedScoreSum = 0;
+
+  for (let i = 1; i < table.rows.length; i++) {
+    const row = table.rows[i];
+    // 跳过隐藏的行
+    if (row.classList.contains("hidden-row")) continue;
+    
+    const checkbox = row.cells[0].querySelector("input[type='checkbox']");
+    if (!checkbox || !checkbox.checked) continue; // 未勾选不参与计算
+
+    const creditInput = row.cells[5].querySelector("input");
+    const scoreInput = row.cells[6].querySelector("input");
+    const gpaDisplay = row.cells[7].querySelector(".gpa-display");
+
+    if (!creditInput || !scoreInput || !gpaDisplay) continue;
+
+    const credit = parseFloat(creditInput.value);
+    const score = parseFloat(scoreInput.value);
+    const gpa = parseFloat(gpaDisplay.innerText);
+
+    if (isNaN(credit) || isNaN(score) || isNaN(gpa)) continue;
+
+    totalCredits += credit;
+    totalPoints += gpa * credit;
+    weightedScoreSum += score * credit;
+  }
+
+  if (totalCredits === 0) {
+    document.getElementById("gpaResult").innerText = "加权 GPA：--";
+    document.getElementById("avgResult").innerText = "加权均分：--";
+    document.getElementById("creditResult").innerText = "已选课程总学分：0";
+    return;
+  }
+
+  const finalGPA = totalPoints / totalCredits;
+  const finalAvg = weightedScoreSum / totalCredits;
+
+  document.getElementById("gpaResult").innerText = "加权 GPA：" + finalGPA.toFixed(3);
+  document.getElementById("avgResult").innerText = "加权均分：" + finalAvg.toFixed(2);
+  document.getElementById("creditResult").innerText =
+    "已选课程总学分：" + parseFloat(totalCredits.toFixed(2));
+}
+
+function getCourseRows() {
+  const table = document.getElementById("courseTable");
+  return Array.from(table.rows).slice(1);
+}
+
+function finishBulkSelection() {
+  calculate();
+  debounceSaveHistory();
+}
+
+function selectAllCourses(selected) {
+  getCourseRows().forEach(row => {
+    const checkbox = row.cells[0].querySelector("input[type='checkbox']");
+    if (checkbox) {
+      checkbox.checked = selected;
+    }
+  });
+  finishBulkSelection();
+}
+
+function selectSemesterCourses(year, term) {
+  getCourseRows().forEach(row => {
+    const yearInput = row.cells[1].querySelector("input");
+    const termInput = row.cells[2].querySelector("input");
+    const checkbox = row.cells[0].querySelector("input[type='checkbox']");
+
+    if (
+      yearInput &&
+      termInput &&
+      checkbox &&
+      yearInput.value.trim() === year &&
+      termInput.value.trim() === term
+    ) {
+      checkbox.checked = true;
+    }
+  });
+  finishBulkSelection();
+}
+
+function updateSemesterButtons() {
+  const container = document.getElementById("semesterButtons");
+  const semesters = new Map();
+
+  getCourseRows().forEach(row => {
+    const yearInput = row.cells[1].querySelector("input");
+    const termInput = row.cells[2].querySelector("input");
+    if (!yearInput || !termInput) return;
+
+    const year = yearInput.value.trim();
+    const term = termInput.value.trim();
+    if (!year || (term !== "1" && term !== "2")) return;
+
+    const yearNumberMatch = year.match(/\d{4}/);
+    const yearNumber = yearNumberMatch ? parseInt(yearNumberMatch[0], 10) : Number.MAX_SAFE_INTEGER;
+    semesters.set(year + "\u0000" + term, { year, term, yearNumber });
+  });
+
+  const sortedSemesters = Array.from(semesters.values())
+    .sort((a, b) =>
+      a.yearNumber - b.yearNumber ||
+      a.year.localeCompare(b.year, "zh-CN") ||
+      Number(a.term) - Number(b.term)
+    )
+    .slice(0, 8);
+
+  container.innerHTML = "";
+
+  if (sortedSemesters.length === 0) {
+    const emptyText = document.createElement("span");
+    emptyText.className = "semester-empty";
+    emptyText.innerText = "导入含学年和学期的课程后，将显示分学期全选按钮";
+    container.appendChild(emptyText);
+    return;
+  }
+
+  const uniqueYears = [...new Set(sortedSemesters.map(item => item.year))];
+  sortedSemesters.forEach(semester => {
+    const gradeIndex = uniqueYears.indexOf(semester.year);
+    const gradeNames = ["大一", "大二", "大三", "大四"];
+    const gradeName = gradeNames[gradeIndex] || semester.year;
+    const termName = semester.term === "1" ? "上" : "下";
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.innerText = `${gradeName}${termName}全选（${semester.year}）`;
+    button.onclick = function() {
+      selectSemesterCourses(semester.year, semester.term);
+    };
+    container.appendChild(button);
+  });
+}
+
+function convertGradeToScore(grade) {
+  const gradeMap = {
+    "优秀": 95,
+    "良好": 85,
+    "中等": 75,
+    "及格": 65,
+    "合格": 60
+  };
+  
+  const gradeStr = String(grade).trim();
+  
+  // 如果是数字，直接返回
+  const numScore = parseFloat(gradeStr);
+  if (!isNaN(numScore)) {
+    return numScore;
+  }
+  
+  // 如果是文字等级，转换为分数
+  if (gradeMap.hasOwnProperty(gradeStr)) {
+    return gradeMap[gradeStr];
+  }
+  
+  // 如果无法识别，返回 null
+  return null;
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  
+  return result;
+}
+
+function importFromCSV() {
+  const fileInput = document.getElementById("csvFileInput");
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    alert("请选择 CSV 文件");
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result;
+    const lines = text.split(/\r?\n/);
+    
+    if (lines.length < 2) {
+      alert("CSV 文件格式不正确或为空");
+      return;
+    }
+    
+    // 跳过第一行表头
+    let importedCount = 0;
+    let skippedCount = 0;
+    
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue; // 跳过空行
+      
+      const columns = parseCSVLine(line);
+      
+      // CSV 格式：序号,学年,学期,课程名称,课程性质,成绩,学分
+      // 索引：     0    1    2    3        4        5    6
+      if (columns.length < 7) {
+        skippedCount++;
+        continue;
+      }
+      
+      const year = columns[1];       // 学年
+      const term = columns[2];      // 学期
+      const courseName = columns[3]; // 课程名称
+      const courseType = columns[4]; // 课程性质
+      const grade = columns[5];      // 成绩
+      const creditStr = columns[6];  // 学分
+      
+      if (!courseName || !grade || !creditStr) {
+        skippedCount++;
+        continue;
+      }
+      
+      // 转换成绩
+      const score = convertGradeToScore(grade);
+      if (score === null) {
+        skippedCount++;
+        continue;
+      }
+      
+      // 转换学分
+      const credit = parseFloat(creditStr);
+      if (isNaN(credit)) {
+        skippedCount++;
+        continue;
+      }
+      
+      // 添加课程
+      addCourseFromData(courseName, credit, score, year || "", term || "", courseType || "");
+      importedCount++;
+    }
+    
+    // 导入完成后保存历史记录
+    saveHistory();
+    
+    alert(`导入完成！成功导入 ${importedCount} 门课程${skippedCount > 0 ? `，跳过 ${skippedCount} 条无效数据` : ''}`);
+    
+    // 清空文件输入
+    fileInput.value = "";
+  };
+  
+  reader.onerror = function() {
+    alert("读取文件失败");
+  };
+  
+  // 使用 UTF-8 编码读取，支持中文
+  reader.readAsText(file, "UTF-8");
+}
+
+function addCourseFromData(name, credit, score, year, term, courseType) {
+  const gpa = scoreToGPA(score);
+  
+  const table = document.getElementById("courseTable");
+  const row = table.insertRow(-1);
+  
+  // 勾选框
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = true; // 默认参与计算
+  checkbox.onchange = function() {
+    calculate();
+    debounceSaveHistory();
+  };
+
+  // 学年输入框
+  const yearInput = document.createElement("input");
+  yearInput.type = "text";
+  yearInput.value = year;
+  yearInput.style.width = "120px";
+  yearInput.onchange = function() {
+    applyFilters();
+    updateSemesterButtons();
+    calculate();
+    // 使用防抖，避免频繁保存
+    debounceSaveHistory();
+  };
+
+  // 学期输入框
+  const termInput = document.createElement("input");
+  termInput.type = "text";
+  termInput.value = term;
+  termInput.style.width = "60px";
+  termInput.onchange = function() {
+    applyFilters();
+    updateSemesterButtons();
+    calculate();
+    debounceSaveHistory();
+  };
+
+  // 课程名输入框
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.value = name;
+  nameInput.style.width = "150px";
+  nameInput.onchange = function() {
+    applyFilters();
+    calculate();
+    debounceSaveHistory();
+  };
+
+  // 课程性质输入框
+  const typeInput = document.createElement("input");
+  typeInput.type = "text";
+  typeInput.value = courseType;
+  typeInput.style.width = "100px";
+  typeInput.onchange = function() {
+    applyFilters();
+    calculate();
+    debounceSaveHistory();
+  };
+
+  // 学分输入框
+  const creditInput = document.createElement("input");
+  creditInput.type = "number";
+  creditInput.value = credit;
+  creditInput.style.width = "80px";
+  creditInput.step = "0.5";
+  creditInput.min = "0";
+  creditInput.onchange = function() {
+    updateGPA(row);
+    calculate();
+    debounceSaveHistory();
+  };
+  
+  // 成绩输入框
+  const scoreInput = document.createElement("input");
+  scoreInput.type = "number";
+  scoreInput.value = score;
+  scoreInput.style.width = "80px";
+  scoreInput.min = "0";
+  scoreInput.max = "100";
+  scoreInput.onchange = function() {
+    updateGPA(row);
+    calculate();
+    debounceSaveHistory();
+  };
+  
+  // 绩点显示（只读）
+  const gpaCell = document.createElement("span");
+  gpaCell.innerText = gpa.toFixed(1);
+  gpaCell.className = "gpa-display";
+  
+  // 删除按钮
+  const deleteBtn = document.createElement("button");
+  deleteBtn.innerText = "删除";
+  deleteBtn.onclick = function() {
+    row.remove();
+    updateSemesterButtons();
+    calculate();
+    saveHistory(); // 删除操作立即保存
+  };
+  
+  row.insertCell(0).appendChild(checkbox);
+  row.insertCell(1).appendChild(yearInput);
+  row.insertCell(2).appendChild(termInput);
+  row.insertCell(3).appendChild(nameInput);
+  row.insertCell(4).appendChild(typeInput);
+  row.insertCell(5).appendChild(creditInput);
+  row.insertCell(6).appendChild(scoreInput);
+  row.insertCell(7).appendChild(gpaCell);
+  row.insertCell(8).appendChild(deleteBtn);
+  
+  updateSemesterButtons();
+  applyFilters();
+  calculate();
+  // 注意：不在 addCourseFromData 中保存历史，由调用者决定何时保存
+}
+
+function applyFilters() {
+  const filterYear = document.getElementById("filterYear").value.trim().toLowerCase();
+  const filterTerm = document.getElementById("filterTerm").value.trim().toLowerCase();
+  const filterType = document.getElementById("filterType").value.trim().toLowerCase();
+  const filterName = document.getElementById("filterName").value.trim().toLowerCase();
+  
+  const table = document.getElementById("courseTable");
+  
+  for (let i = 1; i < table.rows.length; i++) {
+    const row = table.rows[i];
+    const yearInput = row.cells[1].querySelector("input");
+    const termInput = row.cells[2].querySelector("input");
+    const nameInput = row.cells[3].querySelector("input");
+    const typeInput = row.cells[4].querySelector("input");
+    
+    if (!yearInput || !termInput || !nameInput || !typeInput) continue;
+    
+    const year = (yearInput.value || "").toLowerCase();
+    const term = (termInput.value || "").toLowerCase();
+    const name = (nameInput.value || "").toLowerCase();
+    const type = (typeInput.value || "").toLowerCase();
+    
+    let shouldShow = true;
+    
+    if (filterYear && !year.includes(filterYear)) {
+      shouldShow = false;
+    }
+    if (filterTerm && !term.includes(filterTerm)) {
+      shouldShow = false;
+    }
+    if (filterType && !type.includes(filterType)) {
+      shouldShow = false;
+    }
+    if (filterName && !name.includes(filterName)) {
+      shouldShow = false;
+    }
+    
+    if (shouldShow) {
+      row.classList.remove("hidden-row");
+    } else {
+      row.classList.add("hidden-row");
+    }
+  }
+  
+  calculate();
+}
+
+function clearFilters() {
+  document.getElementById("filterYear").value = "";
+  document.getElementById("filterTerm").value = "";
+  document.getElementById("filterType").value = "";
+  document.getElementById("filterName").value = "";
+  applyFilters();
+}
+
+function exportToCSV() {
+  const table = document.getElementById("courseTable");
+  
+  // 如果没有课程数据，提示用户
+  if (table.rows.length <= 1) {
+    alert("没有可导出的课程数据");
+    return;
+  }
+
+  // 构建 CSV 内容
+  let csvContent = "\uFEFF"; // 添加 BOM 以支持中文
+
+  // 处理包含逗号的字段，用引号包裹
+  const escapeCSV = (str) => {
+    const strValue = String(str);
+    if (strValue.includes(",") || strValue.includes('"') || strValue.includes("\n")) {
+      return '"' + strValue.replace(/"/g, '""') + '"';
+    }
+    return strValue;
+  };
+
+  // 构建 CSV 内容，格式与导入格式一致：序号,学年,学期,课程名称,课程性质,成绩,学分
+  csvContent += ",学年,学期,课程名称,课程性质,成绩,学分\n";
+
+  // 遍历所有课程行
+  let rowIndex = 1;
+  for (let i = 1; i < table.rows.length; i++) {
+    const row = table.rows[i];
+    const yearInput = row.cells[1].querySelector("input");
+    const termInput = row.cells[2].querySelector("input");
+    const nameInput = row.cells[3].querySelector("input");
+    const typeInput = row.cells[4].querySelector("input");
+    const creditInput = row.cells[5].querySelector("input");
+    const scoreInput = row.cells[6].querySelector("input");
+
+    if (!nameInput || !creditInput || !scoreInput) continue;
+
+    const year = yearInput ? yearInput.value : "";
+    const term = termInput ? termInput.value : "";
+    const name = nameInput.value;
+    const type = typeInput ? typeInput.value : "";
+    const credit = creditInput.value;
+    const score = scoreInput.value;
+
+    // 格式：序号,学年,学期,课程名称,课程性质,成绩,学分
+    csvContent += rowIndex + "," + escapeCSV(year) + "," + escapeCSV(term) + "," + escapeCSV(name) + "," + escapeCSV(type) + "," + escapeCSV(score) + "," + credit + "\n";
+    rowIndex++;
+  }
+
+  // 创建下载链接
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute("href", url);
+  link.setAttribute("download", "GPA计算结果_" + new Date().toISOString().slice(0, 10) + ".csv");
+  link.style.visibility = "hidden";
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+</script>
+
+</body>
+</html>
